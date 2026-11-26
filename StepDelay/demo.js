@@ -101,7 +101,7 @@ function format(id, value) {
   return Math.round(value) + "%";
 }
 
-// Draw a native layer or rotate just the transparent indent, never the dial body.
+// Draw the indent over the native dial face, leaving the face stationary.
 const dialCenters = { start: [249,364], interval: [650,364], sustain: [957,262],
   width: [1117,262], lowCut: [1318,262], highCut: [1478,262], ducking: [1037,468], mix: [1397,468] };
 function patch(set, name) {
@@ -114,7 +114,16 @@ function drawDial(set, id, unit) {
   context.save();
   context.translate(cx, cy);
   context.rotate((unit - .5) * Math.PI * 1.5);
-  patch(set, id + "Marker");
+  const large = id === "start" || id === "interval";
+  const lowerRow = id === "ducking" || id === "mix";
+  const outerRadius = large ? 78 : lowerRow ? 48 : 49;
+  const innerRadius = large ? 50 : lowerRow ? 31 : 32;
+  context.strokeStyle = dark ? colorDefault : "#326a64";
+  context.lineWidth = large ? 4 : 3;
+  context.beginPath();
+  context.moveTo(0, -outerRadius);
+  context.lineTo(0, -innerRadius);
+  context.stroke();
   context.restore();
 }
 function drawTiming(set, side, mode, value) {
@@ -213,8 +222,7 @@ function render() {
     const filterDisabled = (id === "lowCut" || id === "highCut") && !state.filter;
     if (id === "threshold") {
       if (state.refresh) drawRefresh(set);
-    } else if (!filterDisabled &&
-        (id === "lowCut" || id === "highCut" || state[id] !== defaults[id] || (id === "width" && spreadOn()))) {
+    } else if (!filterDisabled) {
       drawDial(set, id, valueToUnit(id, state[id]));
     }
     const x = id === "threshold" ? 1217 : dialCenters[id][0];
