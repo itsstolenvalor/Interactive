@@ -1,6 +1,6 @@
 "use strict";
 
-// Deadweight browser preview. The existing PNGs supply the native artwork;
+// Deadweight browser preview. Native WebP artwork and separate dial indents;
 // graphs and changing control states are drawn over it. No audio is processed.
 const $ = (id) => document.getElementById(id);
 const canvas = $("panel");
@@ -43,7 +43,7 @@ const tips = {
   lookahead: "Moves ducking earlier relative to sidechain audio.", threshold: "Sets the level at which sidechain audio triggers ducking.",
   reduction: "Sets the amount of gain reduction.",
 };
-const themeFiles = { light: "assets/light.png", dark: "assets/dark.png" };
+const themeFiles = { light: "assets/light-base.webp", dark: "assets/dark-base.webp" };
 const sprites = {}, buttons = {}, dials = {}, readouts = {};
 let state = { ...defaults, points: [] };
 let dark = false, accent = colorDefault, presetIndex = 0, edited = false;
@@ -343,18 +343,21 @@ function drawSyncIcon(id) {
   context.putImageData(region, left, top);
 }
 
-function drawTiming(image, id) {
+function drawTiming(set, id) {
+  const image = set.base;
   const knob = timing[id];
   const x = knob.x, y = 343;
   const scale = (value) => Math.log1p(value / 10) / Math.log1p(knob.max / 10);
-  const angle = synced(id) ? state[id + "Division"] / knob.last : scale(state[id + "Free"]);
+  const unit = synced(id) ? state[id + "Division"] / knob.last : scale(state[id + "Free"]);
+  function layer(name) {
+    const [sx, sy, w, h, dx, dy] = set.layers[name];
+    context.drawImage(set.sheet, sx, sy, w, h, dx, dy, w / 2, h / 2);
+  }
+  layer(id + "Plate");
   context.save();
   context.translate(x, y);
-  context.rotate((angle - scale(knob.original)) * Math.PI * 1.52);
-  context.beginPath();
-  context.arc(0, 0, 35, 0, Math.PI * 2);
-  context.clip();
-  context.drawImage(image, -x, -y, W, H);
+  context.rotate((unit - scale(knob.original)) * Math.PI * 1.52);
+  layer(id + "Marker");
   context.restore();
   const text = dark ? "#f4f4f4" : "#161719";
   paintValue(image, bounds["value-" + id], x - 39, format(id), text);
@@ -363,14 +366,15 @@ function drawTiming(image, id) {
 
 function render() {
   renderPending = false;
-  const image = sprites[dark ? "dark" : "light"]?.loaded;
-  if (!image) return;
+  const set = sprites[dark ? "dark" : "light"]?.loaded;
+  if (!set) return;
+  const image = set.base;
   context.drawImage(image, 0, 0, W, H);
   curveNodes = [[0, 0, state.initialBend], ...state.points, [1, 1, 0]];
   drawShape();
   drawHistory();
   curveNodes = null;
-  for (const id of Object.keys(timing)) drawTiming(image, id);
+  for (const id of Object.keys(timing)) drawTiming(set, id);
   paintValue(image, [144, 83, 205, 15], 145, factory[presetIndex].name + (edited ? " *" : ""), colorDefault);
   drawTrigger(image);
   if (state.listening) {
@@ -705,7 +709,7 @@ shape.addEventListener("contextmenu", event => {
 
 function image(path) {
   const poster = document.querySelector("#poster, .poster");
-  const resolved = new URL(path, document.baseURI).href;
+  const resolved = window.svPreviewAssets?.[path] || new URL(path, document.baseURI).href;
   if (poster && (poster.dataset.svAsset === path ||
       (poster.src === resolved && (poster.crossOrigin === "anonymous" ||
        new URL(resolved).origin === location.origin)))) {
@@ -723,8 +727,8 @@ function image(path) {
 function loadTheme(theme) {
   if (sprites[theme]) return sprites[theme].ready;
   const entry = sprites[theme] = {};
-  entry.ready = image(themeFiles[theme]).then((asset) => {
-    entry.loaded = asset;
+  entry.ready = Promise.all([image(themeFiles[theme]), image("assets/" + theme + "-layers.webp")]).then(([base, sheet]) => {
+    entry.loaded = { base, sheet, layers: layerData[theme] };
   }).catch((error) => {
     delete sprites[theme];
     throw error;
