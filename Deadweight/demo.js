@@ -138,12 +138,14 @@ function fill(x, y, w, h, color) {
   context.fillRect(x, y, w, h);
 }
 
-function label(value, x, y, color = "#f4f4f4", size = 12) {
+function paintReadout(value, x, baseline, color = "#f4f4f4", size = 11.9) {
+  context.save();
   context.fillStyle = color;
-  context.font = size + "px 'Segoe UI', sans-serif";
+  context.font = size + "px Arial, sans-serif";
   context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText(value, x, y);
+  context.textBaseline = "alphabetic";
+  context.fillText(value, x, baseline);
+  context.restore();
 }
 
 function trace(path, color, width = 1, close = false) {
@@ -219,7 +221,7 @@ function drawHistory() {
   const scale = [4, 8, 12, 24, 48, 96].find(limit => -depth <= limit - Math.min(3, limit * .2)) ?? 96;
   const guide = lower + h * Math.min(.98, -depth * .85 / scale);
   for (let i = 0; i <= 5; i++)
-    label(i === 5 ? "-inf" : String(-Math.round(i * scale / 5)), 493, lower + i * h / 5, "#eee", 9);
+    paintReadout(i === 5 ? "-inf" : String(-Math.round(i * scale / 5)), 493, lower + i * h / 5 + 3.3, "#eee", 9);
   context.setLineDash([3, 3]);
   trace([[x, guide], [x + w, guide]], "#ffffff70");
   const thresholdY = top + h * (-state.threshold / 72);
@@ -273,25 +275,19 @@ function patch(image, source, destination = source) {
 }
 
 // Stretch a clean vertical strip through a readout without painting over its bezel.
-function paintValue(image, rect, cleanX, value, color, size = 12) {
-  const [x, y, w, h] = rect;
-  patch(image, [cleanX, y, 1, h], rect);
-  label(value, x + w / 2, y + h / 2, color, size);
-}
 
 function drawTrigger(image) {
-  // Both supplied PNGs already show Audio selected. Preserve the complete native
-  // control in Audio mode. For MIDI, mirror the whole native bezel, then replace
-  // only the two labels. The outer outline, shared seam and corner radii stay intact.
-  if (state.audio) return;
-  const [x, y, w, h] = bounds.triggerArtwork;
-  context.save();
-  context.translate(2 * x + w, 0);
-  context.scale(-1, 1);
-  patch(image, bounds.triggerArtwork);
-  context.restore();
-  paintValue(image, [576, 85, 44, 15], 628, "MIDI", "#131415");
-  paintValue(image, [627, 85, 43, 15], 615, "AUDIO", "#f7f7f7");
+  if (!state.audio) {
+    // Mirror only the native selector artwork. Captions use the same anchors in either mode.
+    const [x, , w] = bounds.triggerArtwork;
+    context.save();
+    context.translate(2 * x + w, 0);
+    context.scale(-1, 1);
+    patch(image, bounds.triggerArtwork);
+    context.restore();
+  }
+  paintReadout("MIDI", 597, 97, state.audio ? "#f7f7f7" : "#131415");
+  paintReadout("AUDIO", 649, 97, state.audio ? "#131415" : "#f7f7f7");
 }
 
 // Recolor the original antialiased note, not a replacement font glyph.
@@ -352,7 +348,6 @@ function drawSyncIcon(id) {
 }
 
 function drawTiming(set, id) {
-  const image = set.base;
   const knob = timing[id];
   const x = knob.x, y = 343;
   const scale = (value) => Math.log1p(value / 10) / Math.log1p(knob.max / 10);
@@ -371,7 +366,7 @@ function drawTiming(set, id) {
   context.stroke();
   context.restore();
   const text = dark ? "#f4f4f4" : "#161719";
-  paintValue(image, bounds["value-" + id], x - 39, format(id), text);
+  paintReadout(format(id), x + .5, 399, text);
   drawSyncIcon(id);
 }
 
@@ -386,7 +381,8 @@ function render() {
   drawHistory();
   curveNodes = null;
   for (const id of Object.keys(timing)) drawTiming(set, id);
-  paintValue(image, [144, 83, 205, 15], 145, factory[presetIndex].name + (edited ? " *" : ""), colorDefault);
+  paintReadout(factory[presetIndex].name, edited ? 240 : 245, 94.5, colorDefault);
+  if (edited) paintReadout("*", 341, 94.5, colorDefault);
   drawTrigger(image);
   if (state.listening) {
     // Highlight the native headphone control, without replacing its icon.
@@ -397,11 +393,11 @@ function render() {
     context.stroke();
   }
   for (const [id, x, y] of [["lookahead", 866, 92], ["threshold", 1057, 92], ["reduction", 1057, 243]]) {
-    paintValue(image, [x - 32, y - 7, 64, 14], x - 33, format(id), state.audio || id === "reduction" ? "#f7f7f7" : "#a4a6a6");
+    paintReadout(format(id), x, y + 5, state.audio || id === "reduction" ? "#f7f7f7" : "#a4a6a6");
   }
   for (let i = 1; i <= 4; i++) {
     const x = 692 + (i - 1) * 70;
-    paintValue(image, [x - 29, 383, 58, 16], x - 32, i === 1 ? "1 BAR" : i + " BARS", state.bars === i ? colorDefault : "#f7f7f7", 10);
+    paintReadout(i === 1 ? "1 BAR" : i + " BARS", x, 394.5, state.bars === i ? colorDefault : "#f7f7f7", 9.8);
   }
   customAccent();
   canvas.hidden = false;
