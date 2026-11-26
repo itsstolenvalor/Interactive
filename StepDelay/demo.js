@@ -132,8 +132,11 @@ function drawTiming(set, side, mode, value) {
     context.fillStyle = selected ? colorDefault : "#f7f7f7";
     context.fillText((mode === 3 ? millisecondLegends : notes[mode])[i], x, cy + 1);
   }
-  const captionX = side === "interval" ? 595 : 194;
-  paintValue([captionX, 499, 110, 20], modeLabels[mode].toUpperCase(), "#f7f7f7");
+  const captionX = side === "interval" ? 650 : 249;
+  // Keep the button artwork and replace its baked caption at a fixed center.
+  context.drawImage(set.base, captionX - 52, 499, 1, 20, captionX - 50, 499, 100, 20);
+  context.fillStyle = "#f7f7f7";
+  context.fillText(modeLabels[mode].toUpperCase(), captionX, 510);
   if (mode === 3) {
     patch(set, side + "MsBackground");
     paintValue(bounds["value-" + side], format(side, value), "#f7f7f7");
@@ -198,19 +201,16 @@ function render() {
   const set = sprites[dark ? "dark" : "light"]?.loaded;
   if (!set) return;
   context.drawImage(set.base, 0, 0);
-  let timingChanged = false;
   for (const side of ["start", "interval"]) {
     const mode = modeOf(side);
     const value = state[keyOf(side)];
-    if (mode === 0 && value === 3) continue;
-    timingChanged = true;
     drawTiming(set, side, mode, value);
   }
   // The order button sits on the seam between the two timing crops.
-  if (timingChanged || state.single || state.order || state.alternate) {
+  if (state.single || state.order || state.alternate) {
     patch(set, state.single ? "orderDisabled" : "order" + (state.order + 2 * state.alternate));
   }
-  if (timingChanged || !state.firstEchoFollowsTime) patch(set, "link" + state.firstEchoFollowsTime);
+  if (!state.firstEchoFollowsTime) patch(set, "link" + state.firstEchoFollowsTime);
   for (let i = 2; i <= state.cycles; i++) {
     if (!(state.cycleMutes & (1 << (i - 1)))) patch(set, "cycle" + i);
   }
