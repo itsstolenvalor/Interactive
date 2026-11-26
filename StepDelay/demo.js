@@ -509,7 +509,6 @@ button("previous", "Previous preset", () => loadPreset(presetIndex - 1));
 button("next", "Next preset", () => loadPreset(presetIndex + 1));
 button("open", "Load local preset (unavailable in demo)", null).disabled = true;
 button("save", "Save preset (unavailable in demo)", null).disabled = true;
-button("website", "Stolen Valor website", () => window.open("https://itsstolenvalor.com", "_blank", "noopener"));
 function image(path) {
   return new Promise((resolve, reject) => {
     const asset = new Image();
