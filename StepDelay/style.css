@@ -15,25 +15,8 @@ button { color: inherit; cursor: pointer; }
   margin: 0 auto;
   padding: clamp(12px, 2vw, 28px);
 }
-.toolbar, .tools { display: flex; align-items: center; }
-.toolbar { justify-content: space-between; gap: 12px; margin-bottom: 10px; }
-.toolbar p, .help, .status { margin: 0; color: #c3c8c8; }
-.toolbar p { font-size: .875rem; }
-.tools { gap: 6px; flex-shrink: 0; }
-.tools button {
-  background: #202224;
-  border: 1px solid #414749;
-  border-radius: 6px;
-  min-height: 36px;
-  padding: 5px 10px;
-  font-size: .875rem;
-}
-.tools button:hover, .tools button[aria-pressed="true"] { border-color: var(--accent); }
+.help, .status { margin: 0; color: #c3c8c8; }
 .viewport { overflow-x: auto; border-radius: 10px; }
-.viewport.enlarged .instrument { min-width: 800px; }
-@media (min-width: 856px) {
-  #size { display: none; }
-}
 .instrument { width: 100%; position: relative; aspect-ratio: 8 / 3; }
 .instrument img, .instrument canvas, .controls {
   position: absolute;
@@ -90,7 +73,5 @@ button { color: inherit; cursor: pointer; }
 .popup form label { display: block; margin-bottom: 6px; }
 @media (max-width: 520px) {
   .demo { padding: 8px; }
-  .toolbar { flex-wrap: wrap; gap: 5px; }
-  .toolbar p, .help { font-size: .8125rem; }
-  .tools button { min-height: 38px; }
+  .help { font-size: .8125rem; }
 }
