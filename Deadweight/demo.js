@@ -282,6 +282,55 @@ function drawTrigger(image) {
   paintValue(image, [627, 85, 43, 15], 615, "AUDIO", "#f7f7f7");
 }
 
+// Recolor the original antialiased note, not a replacement font glyph.
+// The native PNG supplies the exact shape and the surrounding panel gradient.
+function drawSyncIcon(id) {
+  if (!synced(id)) return;
+  const [x, y, w, h] = id === "hold" ? [181, 287, 22, 21] : [391, 287, 22, 21];
+  const sx = canvas.width / W, sy = canvas.height / H;
+  const left = Math.round(x * sx), top = Math.round(y * sy);
+  const width = Math.round((x + w) * sx) - left;
+  const height = Math.round((y + h) * sy) - top;
+  let region;
+  try {
+    region = context.getImageData(left, top, width, height);
+  } catch (error) {
+    // Keep the native artwork unchanged if local-file canvas readback is blocked.
+    if (error.name !== "SecurityError") throw error;
+    return;
+  }
+  const pixels = region.data;
+  const luminance = (r, g, b) => .2126 * r + .7152 * g + .0722 * b;
+  const contrast = new Float32Array(width * height);
+  const backgrounds = new Float32Array(width * height * 3);
+  let peak = 0;
+  for (let row = 0; row < height; row++) {
+    const first = row * width * 4, last = first + (width - 1) * 4;
+    for (let col = 0; col < width; col++) {
+      const index = row * width + col, offset = index * 4;
+      const fraction = col / Math.max(1, width - 1);
+      const bg = backgrounds.subarray(index * 3, index * 3 + 3);
+      for (let c = 0; c < 3; c++)
+        bg[c] = pixels[first + c] + (pixels[last + c] - pixels[first + c]) * fraction;
+      const delta = luminance(pixels[offset], pixels[offset + 1], pixels[offset + 2]) - luminance(...bg);
+      // Light artwork has a dark note; dark artwork has a light note.
+      contrast[index] = Math.max(0, dark ? delta : -delta);
+      peak = Math.max(peak, contrast[index]);
+    }
+  }
+  if (peak < 20) return;
+  const target = [84, 210, 200]; // Default accent; customAccent() handles user colors.
+  for (let index = 0; index < contrast.length; index++) {
+    if (contrast[index] <= 2) continue;
+    const coverage = clamp(contrast[index] / peak, 0, 1);
+    for (let c = 0; c < 3; c++) {
+      const bg = backgrounds[index * 3 + c];
+      pixels[index * 4 + c] = bg + (target[c] - bg) * coverage;
+    }
+  }
+  context.putImageData(region, left, top);
+}
+
 function drawTiming(image, id) {
   const knob = timing[id];
   const x = knob.x, y = 343;
@@ -297,12 +346,7 @@ function drawTiming(image, id) {
   context.restore();
   const text = dark ? "#f4f4f4" : "#161719";
   paintValue(image, bounds["value-" + id], x - 39, format(id), text);
-  // The native timing icon is already present. Tint it only when tempo sync is on.
-  if (synced(id)) {
-    const syncX = id === "hold" ? 191 : 401;
-    fill(syncX - 9, 288, 18, 19, dark ? "#2c2d2e" : "#eeebeb");
-    label("♫", syncX, 297, colorDefault, 16);
-  }
+  drawSyncIcon(id);
 }
 
 function render() {
