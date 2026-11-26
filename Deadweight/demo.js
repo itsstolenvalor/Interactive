@@ -1,6 +1,6 @@
 "use strict";
 
-// Deadweight browser preview. Native WebP artwork and separate dial indents;
+// Deadweight browser preview. Native WebP artwork and Canvas dial indents;
 // graphs and changing control states are drawn over it. No audio is processed.
 const $ = (id) => document.getElementById(id);
 const canvas = $("panel");
@@ -11,8 +11,16 @@ const nativePresets = $("presets");
 const W = 1141, H = 446;
 context.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
 const colorDefault = "#54d2c8";
-const notes = "1/64T 1/64 1/32T 3/128 1/32 1/16T 3/64 1/16 1/8T 3/32 1/8 1/4T 3/16 1/4 1/2T 3/8 1/2 1/1T 3/4 1/1 3/2".split(" ");
-const beats = [1/24, 1/16, 1/12, 3/32, 1/8, 1/6, 3/16, 1/4, 1/3, 3/8, 1/2, 2/3, 3/4, 1, 4/3, 1.5, 2, 8/3, 3, 4, 6];
+// Native order. Each division keeps its displayed label beside its duration.
+const divisions = [
+  ["1/64T", 1/24], ["1/64", 1/16], ["1/32T", 1/12],
+  ["3/128", 3/32], ["1/32", 1/8], ["1/16T", 1/6],
+  ["3/64", 3/16], ["1/16", 1/4], ["1/8T", 1/3],
+  ["3/32", 3/8], ["1/8", 1/2], ["1/4T", 2/3],
+  ["3/16", 3/4], ["1/4", 1], ["1/2T", 4/3],
+  ["3/8", 1.5], ["1/2", 2], ["1/1T", 8/3],
+  ["3/4", 3], ["1/1", 4], ["3/2", 6]
+];
 const defaults = {
   holdFree: 0, holdDivision: 1, holdSynced: false,
   releaseFree: 125, releaseDivision: 7, releaseSynced: true,
@@ -53,10 +61,10 @@ const round = (value, places = 0) => Number(value.toFixed(places));
 const isTiming = (id) => Object.hasOwn(timing, id);
 const synced = (id) => state[id + "Synced"];
 const keyOf = (id) => isTiming(id) ? id + (synced(id) ? "Division" : "Free") : id;
-const ms = (id) => synced(id) ? beats[state[id + "Division"]] * 500 : state[id + "Free"];
+const ms = (id) => synced(id) ? divisions[state[id + "Division"]][1] * 500 : state[id + "Free"];
 const rangeOf = (id) => isTiming(id) ? (synced(id) ? [0, timing[id].last, 1, .13] : [0, timing[id].max, .1, timing[id].max / 155]) : ranges[id];
 function format(id, value = state[keyOf(id)]) {
-  if (isTiming(id)) return synced(id) ? notes[value] : value.toFixed(1) + " ms";
+  if (isTiming(id)) return synced(id) ? divisions[value][0] : value.toFixed(1) + " ms";
   if (id === "reduction" && value === -60) return "−inf dB";
   return value.toFixed(1) + (id === "lookahead" ? " ms" : " dB");
 }
@@ -349,15 +357,18 @@ function drawTiming(set, id) {
   const x = knob.x, y = 343;
   const scale = (value) => Math.log1p(value / 10) / Math.log1p(knob.max / 10);
   const unit = synced(id) ? state[id + "Division"] / knob.last : scale(state[id + "Free"]);
-  function layer(name) {
-    const [sx, sy, w, h, dx, dy] = set.layers[name];
-    context.drawImage(set.sheet, sx, sy, w, h, dx, dy, w / 2, h / 2);
-  }
-  layer(id + "Plate");
+  const [sx, sy, w, h, dx, dy] = set.layers[id + "Plate"];
+  context.drawImage(set.sheet, sx, sy, w, h, dx, dy, w / 2, h / 2);
+  const originalAngle = id === "hold" ? 0 : .56;
   context.save();
   context.translate(x, y);
-  context.rotate((unit - scale(knob.original)) * Math.PI * 1.52);
-  layer(id + "Marker");
+  context.rotate(originalAngle + (unit - scale(knob.original)) * Math.PI * 1.52);
+  context.strokeStyle = dark ? colorDefault : "#326a64";
+  context.lineWidth = 2.5;
+  context.beginPath();
+  context.moveTo(0, -33);
+  context.lineTo(0, -21);
+  context.stroke();
   context.restore();
   const text = dark ? "#f4f4f4" : "#161719";
   paintValue(image, bounds["value-" + id], x - 39, format(id), text);
@@ -660,7 +671,7 @@ shape.addEventListener("pointermove", event => {
   if (shapeDrag.hold) {
     const value = clamp(x, 0, .95) * ms("release") / Math.max(.05, 1 - x);
     if (synced("hold")) {
-      state.holdDivision = beats.slice(0, timing.hold.last + 1).reduce((best, beat, i) => Math.abs(beat * 500 - value) < Math.abs(beats[best] * 500 - value) ? i : best, 0);
+      state.holdDivision = divisions.slice(0, timing.hold.last + 1).reduce((best, [, beats], i) => Math.abs(beats * 500 - value) < Math.abs(divisions[best][1] * 500 - value) ? i : best, 0);
     }
     else
       state.holdFree = round(clamp(value, 0, timing.hold.max), 1);

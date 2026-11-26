@@ -17,12 +17,7 @@ const notes = [
 const timeStops = [1, 10, 100, 500, 1000, 2000, 5000];
 // Label centers and divisions mirror the native timing controls.
 const timingLegendCenters = [[156,458], [120,364], [156,272], [248,232], [340,272], [376,364], [340,458]];
-const timingLegends = [
-  ["1/64", "1/32", "1/16", "1/8", "1/4", "1/2", "1/1"],
-  ["1/64T", "1/32T", "1/16T", "1/8T", "1/4T", "1/2T", "1/1T"],
-  ["3/128", "3/64", "3/32", "3/16", "3/8", "3/4", "3/2"],
-  timeStops.map(ms => ms >= 1000 ? ms / 1000 + "s" : ms + "ms")
-];
+const millisecondLegends = timeStops.map(ms => ms >= 1000 ? ms / 1000 + "s" : ms + "ms");
 const defaults = {
   startMode: 0, startNote: 3, startMs: 500, intervalMode: 0, intervalNote: 3, intervalMs: 500,
   cycles: 1, sustain: 50, filter: 0, lowCut: 20, highCut: 20000, refresh: 0, ducking: 0,
@@ -135,7 +130,7 @@ function drawTiming(set, side, mode, value) {
     context.drawImage(set.base, x - 21, cy - 10, 1, 20, x - 20, cy - 10, 40, 20);
     const selected = mode === 3 ? Math.abs(value - timeStops[i]) < .001 : value === i;
     context.fillStyle = selected ? colorDefault : "#f7f7f7";
-    context.fillText(timingLegends[mode][i], x, cy + 1);
+    context.fillText((mode === 3 ? millisecondLegends : notes[mode])[i], x, cy + 1);
   }
   patch(set, side + "Mode" + mode);
   if (mode === 3) {
