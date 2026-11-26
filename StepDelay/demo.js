@@ -132,7 +132,8 @@ function drawTiming(set, side, mode, value) {
     context.fillStyle = selected ? colorDefault : "#f7f7f7";
     context.fillText((mode === 3 ? millisecondLegends : notes[mode])[i], x, cy + 1);
   }
-  patch(set, side + "Mode" + mode);
+  const captionX = side === "interval" ? 595 : 194;
+  paintValue([captionX, 499, 110, 20], modeLabels[mode].toUpperCase(), "#f7f7f7");
   if (mode === 3) {
     patch(set, side + "MsBackground");
     paintValue(bounds["value-" + side], format(side, value), "#f7f7f7");
