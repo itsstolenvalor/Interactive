@@ -1,6 +1,6 @@
 "use strict";
 
-const { bounds, frames, factory } = nativeData;
+const { bounds, factory, layers } = nativeData;
 const $ = (id) => document.getElementById(id);
 const canvas = $("panel");
 const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
@@ -98,84 +98,51 @@ function format(id, value) {
   return Math.round(value) + "%";
 }
 
-// Native states remain exact; the optional offline pack stores only changed pixels.
+// Draw a native layer or rotate just the transparent indent, never the dial body.
+const dialCenters = { start: [249,364], interval: [650,364], sustain: [957,262],
+  width: [1117,262], lowCut: [1318,262], highCut: [1478,262], ducking: [1037,468], mix: [1397,468] };
 function patch(set, name) {
-  const [x, y, w, h] = bounds[name];
-  const compact = set.compact?.frames[name];
-  if (compact) {
-    const [page, sx, sy, pw, ph, dx, dy, reset] = compact;
-    if (reset) context.drawImage(set.base, x, y, w, h, x, y, w, h);
-    if (page >= 0) context.drawImage(set.pages.get(page), sx, sy, pw, ph, x + dx, y + dy, pw, ph);
-    return;
-  }
-  const [page, sx, sy] = frames[name];
-  context.drawImage(set.pages.get(page), sx, sy, w, h, x, y, w, h);
+  const [sx, sy, w, h, x, y] = set.layers[name];
+  context.drawImage(set.sheet, sx, sy, w, h, x, y, w, h);
 }
-
-function requiredFrames() {
-  const names = [];
-  let timingChanged = false;
-  for (const side of ["start", "interval"]) {
-    const mode = modeOf(side), value = state[keyOf(side)];
-    if (mode === 0 && value === 3) continue;
-    timingChanged = true;
-    names.push(side + mode + "_" + (mode === 3 ? Math.round(timeToUnit(value) * 24) : value));
-  }
-  if (timingChanged || state.single || state.order || state.alternate)
-    names.push(state.single ? "orderDisabled" : "order" + (state.order + 2 * state.alternate));
-  if (timingChanged || !state.firstEchoFollowsTime) names.push("link" + state.firstEchoFollowsTime);
-  for (let i = 2; i <= state.cycles; i++)
-    if (!(state.cycleMutes & (1 << (i - 1)))) names.push("cycle" + i);
-  if (kill) names.push("killOn");
-  if (state.single) names.push("single");
-  if (state.single || state.widthSpread) names.push((state.single ? "spreadDisabled" : "spread") + state.widthSpread);
-  if (state.filter) names.push("filterOn");
-  for (const id of Object.keys(ranges)) {
-    if (id === "threshold" && !state.refresh) continue;
-    if ((id === "lowCut" || id === "highCut") && !state.filter) continue;
-    if (["sustain", "width", "ducking", "mix"].includes(id) && state[id] === defaults[id] && !(id === "width" && spreadOn())) continue;
-    names.push(id + Math.round(valueToUnit(id, state[id]) * 24));
-  }
-  return names;
+function drawDial(set, id, unit) {
+  patch(set, id + "Plate");
+  const [cx, cy] = dialCenters[id];
+  context.save();
+  context.translate(cx, cy);
+  context.rotate((unit - .5) * Math.PI * 1.5);
+  patch(set, id + "Marker");
+  context.restore();
 }
-
-function missingPages(set) {
-  const ids = requiredFrames().map(name => (set.compact?.frames[name] || frames[name])[0]);
-  return [...new Set(ids)].filter(page => page >= 0 && !set.pages.has(page));
-}
-
-function loadPage(set, page) {
-  if (set.pages.has(page)) return Promise.resolve();
-  if (!set.pending.has(page)) {
-    const path = set.compact ? set.compact.pages[page] : "assets/" + set.theme + "-" + page + ".webp";
-    const ready = image(path).then(asset => { set.pages.set(page, asset); });
-    set.pending.set(page, ready);
-    ready.then(() => set.pending.delete(page), () => set.pending.delete(page));
+function drawTiming(set, side, mode, value) {
+  const unit = mode === 3 ? timeToUnit(value) : value / 6;
+  drawDial(set, side, unit);
+  for (let j = 0; j < 7; j++) {
+    const selected = mode === 3 ? Math.abs(unit * 6 - j) < .001 : value === j;
+    patch(set, side + "Label" + mode + "_" + j + (selected ? "_on" : "_off"));
   }
-  return set.pending.get(page);
+  patch(set, side + "Mode" + mode);
+  if (mode === 3) {
+    patch(set, side + "MsBackground");
+    paintValue(bounds["value-" + side], format(side, value), "#f7f7f7");
+  }
 }
-
-let waitingForPages = null;
-function ensureFrame(set) {
-  const missing = missingPages(set);
-  if (!missing.length) return true;
-  // Keep the previous fully rendered frame visible while native states load.
-  if (waitingForPages?.set === set && missing.every(page => waitingForPages.pages.includes(page))) return false;
-  const request = { set, pages: missing };
-  waitingForPages = request;
-  Promise.all(missing.map(page => loadPage(set, page))).then(() => {
-    if (waitingForPages === request) {
-      waitingForPages = null;
-      announce("");
-      refresh();
-    }
-  }, () => {
-    if (waitingForPages === request) {
-      waitingForPages = null;
-      announce("A control graphic could not load. Try adjusting the control again.");
-    }
-  });
-  return false;
+function drawRefresh(set) {
+  // Two exact native endpoint images; fill the circle continuously according to threshold.
+  patch(set, "threshold0");
+  const unit = valueToUnit("threshold", state.threshold);
+  context.save();
+  context.beginPath();
+  context.rect(1150, 468 + 45 - 90 * unit, 135, 468 + 47 - (468 + 45 - 90 * unit));
+  context.clip();
+  patch(set, "threshold24");
+  context.restore();
+  context.save();
+  context.translate(1217, 468);
+  context.rotate(unit * nativeData.refreshRotation[dark ? "dark" : "light"] * Math.PI / 180);
+  patch(set, "refreshArrow");
+  context.restore();
+  paintValue(bounds["value-threshold"], format("threshold", state.threshold), dark ? "#f7f7f7" : "#101010");
 }
 
 function paintValue(rect, value, color, align = "center") {
@@ -217,7 +184,7 @@ function customAccent() {
 function render() {
   renderPending = false;
   const set = sprites[dark ? "dark" : "light"]?.loaded;
-  if (!set || !ensureFrame(set)) return;
+  if (!set) return;
   context.drawImage(set.base, 0, 0);
   let timingChanged = false;
   for (const side of ["start", "interval"]) {
@@ -225,9 +192,7 @@ function render() {
     const value = state[keyOf(side)];
     if (mode === 0 && value === 3) continue;
     timingChanged = true;
-    const step = mode === 3 ? Math.round(timeToUnit(value) * 24) : value;
-    patch(set, side + mode + "_" + step);
-    if (mode === 3) paintValue(bounds["value-" + side], format(side, value), "#f7f7f7");
+    drawTiming(set, side, mode, value);
   }
   // The order button sits on the seam between the two timing crops.
   if (timingChanged || state.single || state.order || state.alternate) {
@@ -248,12 +213,9 @@ function render() {
     if ((id === "lowCut" || id === "highCut") && !state.filter) continue;
     if (["sustain", "width", "ducking", "mix"].includes(id) &&
         state[id] === defaults[id] && !(id === "width" && spreadOn())) continue;
-    const step = Math.round(valueToUnit(id, state[id]) * 24);
-    patch(set, id + step);
-    if (format(id, state[id]) !== format(id, unitToValue(id, step / 24)) ||
-        (id === "width" && spreadOn())) {
-      paintValue(bounds["value-" + id], format(id, state[id]), dark ? "#f7f7f7" : "#101010");
-    }
+    if (id === "threshold") { drawRefresh(set); continue; }
+    drawDial(set, id, valueToUnit(id, state[id]));
+    paintValue(bounds["value-" + id], format(id, state[id]), dark ? "#f7f7f7" : "#101010");
   }
   if (presetName !== factory[0].name || edited) {
     paintValue([408, 64, 303, 24], presetName, colorDefault);
@@ -588,7 +550,7 @@ button("open", "Load local preset (unavailable in demo)", null).disabled = true;
 button("save", "Save preset (unavailable in demo)", null).disabled = true;
 function image(path) {
   const poster = document.querySelector("#poster, .poster");
-  const resolved = new URL(path, document.baseURI).href;
+  const resolved = window.svPreviewAssets?.[path] || new URL(path, document.baseURI).href;
   if (poster && (poster.dataset.svAsset === path ||
       (poster.src === resolved && (poster.crossOrigin === "anonymous" ||
        new URL(resolved).origin === location.origin)))) {
@@ -606,8 +568,8 @@ function image(path) {
 function loadTheme(theme) {
   if (sprites[theme]) return sprites[theme].ready;
   const entry = sprites[theme] = {};
-  entry.ready = image("assets/" + theme + "-base.webp").then(base => {
-    entry.loaded = { base, theme, compact: nativeData.optimized?.[theme], pages: new Map(), pending: new Map() };
+  entry.ready = Promise.all([image("assets/" + theme + "-base.webp"), image("assets/" + theme + "-layers.webp")]).then(([base, sheet]) => {
+    entry.loaded = { base, sheet, layers: layers[theme] };
   }).catch(error => { delete sprites[theme]; throw error; });
   return entry.ready;
 }
@@ -618,8 +580,6 @@ async function changeTheme(next) {
   try {
     const theme = next ? "dark" : "light";
     await loadTheme(theme);
-    const set = sprites[theme].loaded;
-    await Promise.all(missingPages(set).map(page => loadPage(set, page)));
     if (request !== themeRequest) return false;
     dark = next;
     refresh();
