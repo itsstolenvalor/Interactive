@@ -41,8 +41,7 @@ let state = { ...defaults };
 let dark = false;
 let accent = colorDefault;
 let kill = false;
-let presetIndex = 0;
-let presetName = factory[0].name;
+const presetName = factory[0].name;
 let edited = false;
 let popupAnchor;
 let renderPending = false;
@@ -264,7 +263,6 @@ function refresh() {
     ["left first", "right first", "alternate left first", "alternate right first"][orderIndex]);
   buttons["width-spread"].setAttribute("aria-label", "Stereo width, " + ["fixed", "widen", "narrow"][state.widthSpread]);
   buttons["echo-order"].disabled = buttons["width-spread"].disabled = Boolean(state.single);
-  buttons.presets.setAttribute("aria-label", "Browse presets, " + presetName + (edited ? ", modified" : ""));
   const flags = { filter: state.filter, link: state.firstEchoFollowsTime, "single-mode": state.single, "dual-mode": !state.single, kill };
   for (const [id, value] of Object.entries(flags)) buttons[id].setAttribute("aria-pressed", String(Boolean(value)));
   if (!renderPending) {
@@ -466,16 +464,6 @@ function bindDial(id) {
     (event) => editValue(id, event.currentTarget));
 }
 
-function loadPreset(index) {
-  presetIndex = (index + factory.length) % factory.length;
-  const preset = factory[presetIndex];
-  state = { ...defaults, ...preset.values, mix: state.mix, threshold: state.threshold };
-  presetName = preset.name;
-  edited = false;
-  announce("");
-  refresh();
-}
-
 function muteCycle(i) {
   const bit = 1 << (i - 1);
   if (mutableCycles(state.cycles) & bit) commit("cycleMutes", state.cycleMutes ^ bit);
@@ -546,13 +534,6 @@ for (const side of ["start", "interval"]) {
 }
 for (const id of Object.keys(dialLabels)) bindDial(id);
 
-const [presetX, presetY, , presetH] = bounds.presets;
-button("presets", "Browse presets", (event) => {
-  openPopup(event.currentTarget, factory.map((preset, i) =>
-    choice(preset.name, () => loadPreset(i), i === presetIndex)));
-}, [presetX, presetY, bounds.previous[0] - presetX, presetH]).setAttribute("aria-haspopup", "true");
-button("previous", "Previous preset", () => loadPreset(presetIndex - 1));
-button("next", "Next preset", () => loadPreset(presetIndex + 1));
 button("open", "Load local preset (unavailable in demo)", null).disabled = true;
 button("save", "Save preset (unavailable in demo)", null).disabled = true;
 function image(path) {

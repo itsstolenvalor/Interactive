@@ -54,7 +54,7 @@ const tips = {
 const themeFiles = { light: "assets/light-base.webp", dark: "assets/dark-base.webp" };
 const sprites = {}, buttons = {}, dials = {}, readouts = {};
 let state = { ...defaults, points: [] };
-let dark = false, accent = colorDefault, presetIndex = 0, edited = false;
+let dark = false, accent = colorDefault, edited = false;
 let popupAnchor, renderPending = false, themeRequest = 0;
 const clamp = (n, low, high) => Math.max(low, Math.min(high, n));
 const round = (value, places = 0) => Number(value.toFixed(places));
@@ -381,7 +381,7 @@ function render() {
   drawHistory();
   curveNodes = null;
   for (const id of Object.keys(timing)) drawTiming(set, id);
-  paintReadout(factory[presetIndex].name, edited ? 240 : 245, 94.5, colorDefault);
+  paintReadout(factory[0].name, edited ? 240 : 245, 94.5, colorDefault);
   if (edited) paintReadout("*", 341, 94.5, colorDefault);
   drawTrigger(image);
   if (state.listening) {
@@ -424,7 +424,6 @@ function refresh() {
   buttons.audio.setAttribute("aria-pressed", String(state.audio));
   buttons.listen.setAttribute("aria-pressed", String(state.listening));
   for (let i = 1; i <= 4; i++) buttons["bar-" + i].setAttribute("aria-pressed", String(state.bars === i));
-  buttons["preset-browser"].setAttribute("aria-label", "Browse presets, " + factory[presetIndex].name + (edited ? ", modified" : ""));
   if (!renderPending) {
     renderPending = true;
     requestAnimationFrame(render);
@@ -618,20 +617,6 @@ for (let i = 1; i <= 4; i++) {
   button("bar-" + i, i + (i === 1 ? " bar" : " bars"), "Sets the display to " + i + (i === 1 ? " bar." : " bars."), () => commit("bars", i));
 }
 
-function loadPreset(index) {
-  shapeDrag = undefined;
-  presetIndex = (index + factory.length) % factory.length;
-  state.points = factory[presetIndex].points.map((point) => point.slice());
-  state.initialBend = factory[presetIndex].bend;
-  edited = false;
-  announce("");
-  refresh();
-}
-button("preset-browser", "Browse presets", "Loads or reloads a factory shape.", (event) => {
-  openPopup(event.currentTarget, factory.map((preset, i) => choice(preset.name, () => loadPreset(i), i === presetIndex)));
-}, bounds.presets).setAttribute("aria-haspopup", "true");
-button("previous", "Previous preset", "Loads the previous preset.", () => loadPreset(presetIndex - 1));
-button("next", "Next preset", "Loads the next preset.", () => loadPreset(presetIndex + 1));
 button("open", "Load local preset (unavailable in demo)", "Loading local files is unavailable in the demo.", null).disabled = true;
 button("save", "Save preset (unavailable in demo)", "Saving files is unavailable in the demo.", null).disabled = true;
 
@@ -794,7 +779,9 @@ window.addEventListener("blur", () => closePopup());
 
 instrument.inert = true;
 instrument.setAttribute("aria-busy", "true");
-loadPreset(0);
+state.points = factory[0].points.map(point => point.slice());
+state.initialBend = factory[0].bend;
+refresh();
 loadTheme("light").then(() => {
   refresh();
   instrument.inert = false;
