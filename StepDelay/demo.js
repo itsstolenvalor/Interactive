@@ -1,6 +1,6 @@
 "use strict";
 
-const { bounds, frames, atlasCount, factory } = nativeData;
+const { bounds, frames, factory } = nativeData;
 const $ = (id) => document.getElementById(id);
 const canvas = $("panel");
 const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
@@ -59,6 +59,7 @@ function timeFromUnit(unit) {
 }
 
 function timeToUnit(value) {
+  value = clamp(value, timeStops[0], timeStops[timeStops.length - 1]);
   const i = timeStops.findIndex((stop, index) => index > 0 && stop >= value) - 1;
   const slot = Math.max(0, i);
   return (slot + (value - timeStops[slot]) / (timeStops[slot + 1] - timeStops[slot])) / 6;
@@ -97,10 +98,84 @@ function format(id, value) {
   return Math.round(value) + "%";
 }
 
+// Native states remain exact; the optional offline pack stores only changed pixels.
 function patch(set, name) {
-  const [page, sx, sy] = frames[name];
   const [x, y, w, h] = bounds[name];
-  context.drawImage(set.atlases[page], sx, sy, w, h, x, y, w, h);
+  const compact = set.compact?.frames[name];
+  if (compact) {
+    const [page, sx, sy, pw, ph, dx, dy, reset] = compact;
+    if (reset) context.drawImage(set.base, x, y, w, h, x, y, w, h);
+    if (page >= 0) context.drawImage(set.pages.get(page), sx, sy, pw, ph, x + dx, y + dy, pw, ph);
+    return;
+  }
+  const [page, sx, sy] = frames[name];
+  context.drawImage(set.pages.get(page), sx, sy, w, h, x, y, w, h);
+}
+
+function requiredFrames() {
+  const names = [];
+  let timingChanged = false;
+  for (const side of ["start", "interval"]) {
+    const mode = modeOf(side), value = state[keyOf(side)];
+    if (mode === 0 && value === 3) continue;
+    timingChanged = true;
+    names.push(side + mode + "_" + (mode === 3 ? Math.round(timeToUnit(value) * 24) : value));
+  }
+  if (timingChanged || state.single || state.order || state.alternate)
+    names.push(state.single ? "orderDisabled" : "order" + (state.order + 2 * state.alternate));
+  if (timingChanged || !state.firstEchoFollowsTime) names.push("link" + state.firstEchoFollowsTime);
+  for (let i = 2; i <= state.cycles; i++)
+    if (!(state.cycleMutes & (1 << (i - 1)))) names.push("cycle" + i);
+  if (kill) names.push("killOn");
+  if (state.single) names.push("single");
+  if (state.single || state.widthSpread) names.push((state.single ? "spreadDisabled" : "spread") + state.widthSpread);
+  if (state.filter) names.push("filterOn");
+  for (const id of Object.keys(ranges)) {
+    if (id === "threshold" && !state.refresh) continue;
+    if ((id === "lowCut" || id === "highCut") && !state.filter) continue;
+    if (["sustain", "width", "ducking", "mix"].includes(id) && state[id] === defaults[id] && !(id === "width" && spreadOn())) continue;
+    names.push(id + Math.round(valueToUnit(id, state[id]) * 24));
+  }
+  return names;
+}
+
+function missingPages(set) {
+  const ids = requiredFrames().map(name => (set.compact?.frames[name] || frames[name])[0]);
+  return [...new Set(ids)].filter(page => page >= 0 && !set.pages.has(page));
+}
+
+function loadPage(set, page) {
+  if (set.pages.has(page)) return Promise.resolve();
+  if (!set.pending.has(page)) {
+    const path = set.compact ? set.compact.pages[page] : "assets/" + set.theme + "-" + page + ".webp";
+    const ready = image(path).then(asset => { set.pages.set(page, asset); });
+    set.pending.set(page, ready);
+    ready.then(() => set.pending.delete(page), () => set.pending.delete(page));
+  }
+  return set.pending.get(page);
+}
+
+let waitingForPages = null;
+function ensureFrame(set) {
+  const missing = missingPages(set);
+  if (!missing.length) return true;
+  // Keep the previous fully rendered frame visible while native states load.
+  if (waitingForPages?.set === set && missing.every(page => waitingForPages.pages.includes(page))) return false;
+  const request = { set, pages: missing };
+  waitingForPages = request;
+  Promise.all(missing.map(page => loadPage(set, page))).then(() => {
+    if (waitingForPages === request) {
+      waitingForPages = null;
+      announce("");
+      refresh();
+    }
+  }, () => {
+    if (waitingForPages === request) {
+      waitingForPages = null;
+      announce("A control graphic could not load. Try adjusting the control again.");
+    }
+  });
+  return false;
 }
 
 function paintValue(rect, value, color, align = "center") {
@@ -128,7 +203,7 @@ function customAccent() {
   const source = [84, 210, 200];
   const pixels = frame.data;
   for (let i = 0; i < pixels.length; i += 4) {
-    const [r, g, b] = [pixels[i], pixels[i + 1], pixels[i + 2]];
+    const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
     const chroma = Math.min(g, b) - r;
     if (chroma < 4 || Math.abs(g - b) > Math.max(20, chroma * .42)) continue;
     const amount = chroma / 116;
@@ -142,7 +217,7 @@ function customAccent() {
 function render() {
   renderPending = false;
   const set = sprites[dark ? "dark" : "light"]?.loaded;
-  if (!set) return;
+  if (!set || !ensureFrame(set)) return;
   context.drawImage(set.base, 0, 0);
   let timingChanged = false;
   for (const side of ["start", "interval"]) {
@@ -188,6 +263,8 @@ function render() {
     }
   }
   customAccent();
+  canvas.hidden = false;
+  $("poster").hidden = true;
 }
 
 function refresh() {
@@ -510,24 +587,28 @@ button("next", "Next preset", () => loadPreset(presetIndex + 1));
 button("open", "Load local preset (unavailable in demo)", null).disabled = true;
 button("save", "Save preset (unavailable in demo)", null).disabled = true;
 function image(path) {
+  const poster = document.querySelector("#poster, .poster");
+  const resolved = new URL(path, document.baseURI).href;
+  if (poster && (poster.dataset.svAsset === path ||
+      (poster.src === resolved && (poster.crossOrigin === "anonymous" ||
+       new URL(resolved).origin === location.origin)))) {
+    return poster.decode().then(() => poster);
+  }
   return new Promise((resolve, reject) => {
     const asset = new Image();
+    if (location.protocol !== "file:") asset.crossOrigin = "anonymous";
     asset.onload = () => resolve(asset);
     asset.onerror = () => reject(new Error(path));
-    asset.src = path;
+    asset.src = resolved;
   });
 }
 
 function loadTheme(theme) {
   if (sprites[theme]) return sprites[theme].ready;
   const entry = sprites[theme] = {};
-  entry.ready = Promise.all([
-    image("assets/" + theme + "-base.webp"),
-    ...Array.from({ length: atlasCount }, (_, index) => image("assets/" + theme + "-" + index + ".webp")),
-  ]).then(([base, ...atlases]) => { entry.loaded = { base, atlases }; }).catch((error) => {
-    delete sprites[theme];
-    throw error;
-  });
+  entry.ready = image("assets/" + theme + "-base.webp").then(base => {
+    entry.loaded = { base, theme, compact: nativeData.optimized?.[theme], pages: new Map(), pending: new Map() };
+  }).catch(error => { delete sprites[theme]; throw error; });
   return entry.ready;
 }
 
@@ -535,7 +616,10 @@ let themeRequest = 0;
 async function changeTheme(next) {
   const request = ++themeRequest;
   try {
-    await loadTheme(next ? "dark" : "light");
+    const theme = next ? "dark" : "light";
+    await loadTheme(theme);
+    const set = sprites[theme].loaded;
+    await Promise.all(missingPages(set).map(page => loadPage(set, page)));
     if (request !== themeRequest) return false;
     dark = next;
     refresh();
@@ -581,8 +665,6 @@ window.addEventListener("blur", () => setKill(false));
 
 loadTheme("light").then(() => {
   refresh();
-  canvas.hidden = false;
-  $("poster").hidden = true;
   instrument.inert = false;
   instrument.setAttribute("aria-busy", "false");
 }).catch(() => {
