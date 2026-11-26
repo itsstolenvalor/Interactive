@@ -121,26 +121,14 @@ function drawTiming(set, side, mode, value) {
   const unit = mode === 3 ? timeToUnit(value) : value / 6;
   drawDial(set, side, unit);
   const offset = side === "interval" ? 400 : 0;
-  context.font = "16px Arial, sans-serif";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  for (const [i, [cx, cy]] of timingLegendCenters.entries()) {
-    const x = cx + offset;
-    // The native panel has a vertical gradient. Copy its clean edge row by row.
-    context.drawImage(set.base, x - 21, cy - 10, 1, 20, x - 20, cy - 10, 40, 20);
+  const legends = mode === 3 ? millisecondLegends : notes[mode];
+  for (const [i, [x, y]] of timingLegendCenters.entries()) {
     const selected = mode === 3 ? Math.abs(value - timeStops[i]) < .001 : value === i;
-    context.fillStyle = selected ? colorDefault : "#f7f7f7";
-    context.fillText((mode === 3 ? millisecondLegends : notes[mode])[i], x, cy + 1);
+    paintReadout(legends[i], x + offset, y + (y === 458 ? 10 : 9), selected ? colorDefault : "#f7f7f7");
   }
-  const captionX = side === "interval" ? 650 : 249;
-  // Keep the button artwork and replace its baked caption at a fixed center.
-  context.drawImage(set.base, captionX - 52, 499, 1, 20, captionX - 50, 499, 100, 20);
-  context.fillStyle = "#f7f7f7";
-  context.fillText(modeLabels[mode].toUpperCase(), captionX, 510);
-  if (mode === 3) {
-    patch(set, side + "MsBackground");
-    paintValue(bounds["value-" + side], format(side, value), "#f7f7f7");
-  }
+  const x = side === "interval" ? 650 : 249;
+  paintReadout(modeLabels[mode].toUpperCase(), x, 515, "#f7f7f7");
+  if (mode === 3) paintReadout(format(side, value), x, 470, "#f7f7f7");
 }
 function drawRefresh(set) {
   // Two exact native endpoint images; fill the circle continuously according to threshold.
@@ -157,18 +145,18 @@ function drawRefresh(set) {
   context.rotate(unit * nativeData.refreshRotation[dark ? "dark" : "light"] * Math.PI / 180);
   patch(set, "refreshArrow");
   context.restore();
-  paintValue(bounds["value-threshold"], format("threshold", state.threshold), dark ? "#f7f7f7" : "#101010");
 }
 
-function paintValue(rect, value, color, align = "center") {
-  const [x, y, w, h] = rect;
-  // Extend a clean strip of the native paint through its original readout.
-  context.drawImage(canvas, x + 3, y, 1, h, x + 4, y, w - 8, h);
-  context.font = "16px Arial, sans-serif";
+// Baselines are measured in native panel pixels, independent of the value's glyphs.
+function paintReadout(text, x, baseline, color, opacity = 1) {
+  context.save();
+  context.font = "17px Arial, sans-serif";
   context.fillStyle = color;
-  context.textAlign = align;
-  context.textBaseline = "middle";
-  context.fillText(value, align === "right" ? x + w - 8 : x + w / 2, y + h / 2 + 1, w - 20);
+  context.globalAlpha = opacity;
+  context.textAlign = "center";
+  context.textBaseline = "alphabetic";
+  context.fillText(text, x, baseline);
+  context.restore();
 }
 
 function customAccent() {
@@ -220,22 +208,21 @@ function render() {
     patch(set, (state.single ? "spreadDisabled" : "spread") + state.widthSpread);
   }
   if (state.filter) patch(set, "filterOn");
+  const valueColor = dark ? "#f7f7f7" : "#101010";
   for (const id of Object.keys(ranges)) {
-    if (id === "threshold" && !state.refresh) continue;
-    if ((id === "lowCut" || id === "highCut") && !state.filter) continue;
-    if (["sustain", "width", "ducking", "mix"].includes(id) &&
-        state[id] === defaults[id] && !(id === "width" && spreadOn())) continue;
-    if (id === "threshold") { drawRefresh(set); continue; }
-    drawDial(set, id, valueToUnit(id, state[id]));
-    paintValue(bounds["value-" + id], format(id, state[id]), dark ? "#f7f7f7" : "#101010");
-  }
-  if (presetName !== factory[0].name || edited) {
-    paintValue([408, 64, 303, 24], presetName, colorDefault);
-    if (edited) {
-      context.fillStyle = colorDefault;
-      context.fillText("*", 705, 77);
+    const filterDisabled = (id === "lowCut" || id === "highCut") && !state.filter;
+    if (id === "threshold") {
+      if (state.refresh) drawRefresh(set);
+    } else if (!filterDisabled &&
+        (id === "lowCut" || id === "highCut" || state[id] !== defaults[id] || (id === "width" && spreadOn()))) {
+      drawDial(set, id, valueToUnit(id, state[id]));
     }
+    const x = id === "threshold" ? 1217 : dialCenters[id][0];
+    const baseline = bounds["value-" + id][1] === 321 ? 339 : 546;
+    paintReadout(format(id, state[id]), x, baseline, valueColor, filterDisabled ? .5 : 1);
   }
+  paintReadout(presetName, edited ? 553 : 560, 80, colorDefault);
+  if (edited) paintReadout("*", 704, 80, colorDefault);
   customAccent();
   canvas.hidden = false;
   $("poster").hidden = true;
