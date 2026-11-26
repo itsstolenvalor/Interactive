@@ -12,13 +12,6 @@
 </head>
 <body>
   <main class="demo" aria-label="StepDelay interactive preview">
-    <header class="toolbar">
-      <p>Interactive preview <span aria-hidden="true">·</span> No audio</p>
-      <div class="tools">
-        <button type="button" id="size" aria-pressed="false">Enlarge controls</button>
-        <button type="button" id="reset">Reset</button>
-      </div>
-    </header>
     <div class="viewport" id="viewport">
       <div class="instrument" id="instrument" aria-busy="true" inert>
         <img id="poster" src="assets/light-base.webp" width="1600" height="600" alt="StepDelay plug-in interface" draggable="false">
@@ -30,7 +23,6 @@
     <p id="status" role="status" class="status" hidden></p>
     <noscript><p class="help">Enable JavaScript to use the preview controls.</p></noscript>
     <div id="popup" class="popup" hidden></div>
-    <input id="preset-file" type="file" accept=".stepdelay" hidden>
   </main>
 </body>
 </html>
