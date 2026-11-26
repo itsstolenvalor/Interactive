@@ -43,6 +43,7 @@ const tips = {
   lookahead: "Moves ducking earlier relative to sidechain audio.", threshold: "Sets the level at which sidechain audio triggers ducking.",
   reduction: "Sets the amount of gain reduction.",
 };
+const themeFiles = { light: "assets/light.png", dark: "assets/dark.png" };
 const sprites = {}, buttons = {}, dials = {}, readouts = {};
 let state = { ...defaults, points: [] };
 let dark = false, accent = colorDefault, presetIndex = 0, edited = false;
@@ -158,10 +159,12 @@ function grid(x, y, w, h, cols, rows, color) {
     trace([[x, y + h * i / rows], [x + w, y + h * i / rows]], color);
 }
 
+let curveNodes = null;
 function curve(t) {
   t = clamp(t, 0, 1);
-  const nodes = [[0, 0, state.initialBend], ...state.points, [1, 1, 0]];
-  const right = nodes.findIndex(([x], i) => i && x >= t);
+  const nodes = curveNodes || [[0, 0, state.initialBend], ...state.points, [1, 1, 0]];
+  let right = 1;
+  while (right < nodes.length - 1 && nodes[right][0] < t) right++;
   const [x, y, bend] = nodes[right - 1];
   const [nextX, nextY] = nodes[right];
   const u = (t - x) / (nextX - x);
@@ -217,6 +220,7 @@ function drawHistory() {
   context.setLineDash([]);
   const history = [], gain = [];
   const duration = state.bars * 2000;
+  const holdMs = ms("hold"), releaseMs = Math.max(1, ms("release"));
   for (let i = 0; i <= 593; i++) {
     const pos = i / 593 * state.bars / 4;
     let age = Infinity, peak = 0, end = 0;
@@ -227,7 +231,7 @@ function drawHistory() {
         peak = level * Math.exp(-age / (len * 2900)) * (.78 + .15 * Math.sin(i * 1.9) + .06 * Math.sin(i * .37));
       }
     }
-    const recovery = clamp((age - end - ms("hold") + (state.audio ? state.lookahead : 0)) / Math.max(1, ms("release")), 0, 1);
+    const recovery = clamp((age - end - holdMs + (state.audio ? state.lookahead : 0)) / releaseMs, 0, 1);
     const measured = Number.isFinite(age) && age < duration ? curve(recovery) : 1;
     gain.push([x + i, lower + (guide - lower) * (1 - measured)]);
     history.push([x + i, top + h * (1 - clamp((72 + 20 * Math.log10(Math.max(.00025, peak))) / 72, 0, 1))]);
@@ -284,6 +288,7 @@ function drawTrigger(image) {
 
 // Recolor the original antialiased note, not a replacement font glyph.
 // The native PNG supplies the exact shape and the surrounding panel gradient.
+const syncCache = new Map();
 function drawSyncIcon(id) {
   if (!synced(id)) return;
   const [x, y, w, h] = id === "hold" ? [181, 287, 22, 21] : [391, 287, 22, 21];
@@ -291,6 +296,12 @@ function drawSyncIcon(id) {
   const left = Math.round(x * sx), top = Math.round(y * sy);
   const width = Math.round((x + w) * sx) - left;
   const height = Math.round((y + h) * sy) - top;
+  const cacheKey = (dark ? "dark" : "light") + ":" + id;
+  if (syncCache.has(cacheKey)) {
+    const cached = syncCache.get(cacheKey);
+    if (cached) context.putImageData(cached, left, top);
+    return;
+  }
   let region;
   try {
     region = context.getImageData(left, top, width, height);
@@ -318,7 +329,7 @@ function drawSyncIcon(id) {
       peak = Math.max(peak, contrast[index]);
     }
   }
-  if (peak < 20) return;
+  if (peak < 20) { syncCache.set(cacheKey, null); return; }
   const target = [84, 210, 200]; // Default accent; customAccent() handles user colors.
   for (let index = 0; index < contrast.length; index++) {
     if (contrast[index] <= 2) continue;
@@ -328,6 +339,7 @@ function drawSyncIcon(id) {
       pixels[index * 4 + c] = bg + (target[c] - bg) * coverage;
     }
   }
+  syncCache.set(cacheKey, region);
   context.putImageData(region, left, top);
 }
 
@@ -354,8 +366,10 @@ function render() {
   const image = sprites[dark ? "dark" : "light"]?.loaded;
   if (!image) return;
   context.drawImage(image, 0, 0, W, H);
+  curveNodes = [[0, 0, state.initialBend], ...state.points, [1, 1, 0]];
   drawShape();
   drawHistory();
+  curveNodes = null;
   for (const id of Object.keys(timing)) drawTiming(image, id);
   paintValue(image, [144, 83, 205, 15], 145, factory[presetIndex].name + (edited ? " *" : ""), colorDefault);
   drawTrigger(image);
@@ -376,6 +390,7 @@ function render() {
   }
   customAccent();
   canvas.hidden = false;
+  document.querySelector(".poster").hidden = true;
 }
 
 function refresh() {
@@ -457,7 +472,7 @@ function customAccent() {
   const source = [84, 210, 200];
   const pixels = frame.data;
   for (let i = 0; i < pixels.length; i += 4) {
-    const [r, g, b] = [pixels[i], pixels[i + 1], pixels[i + 2]];
+    const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
     const chroma = Math.min(g, b) - r;
     if (chroma < 4 || Math.abs(g - b) > Math.max(20, chroma * .42)) continue;
     const amount = chroma / 116;
@@ -689,20 +704,26 @@ shape.addEventListener("contextmenu", event => {
 });
 
 function image(path) {
+  const poster = document.querySelector("#poster, .poster");
+  const resolved = new URL(path, document.baseURI).href;
+  if (poster && (poster.dataset.svAsset === path ||
+      (poster.src === resolved && (poster.crossOrigin === "anonymous" ||
+       new URL(resolved).origin === location.origin)))) {
+    return poster.decode().then(() => poster);
+  }
   return new Promise((resolve, reject) => {
     const asset = new Image();
-    // Required for canvas readback in Fourthwall's sandboxed srcdoc preview.
     if (location.protocol !== "file:") asset.crossOrigin = "anonymous";
     asset.onload = () => resolve(asset);
     asset.onerror = () => reject(new Error(path));
-    asset.src = path;
+    asset.src = resolved;
   });
 }
 
 function loadTheme(theme) {
   if (sprites[theme]) return sprites[theme].ready;
   const entry = sprites[theme] = {};
-  entry.ready = image("assets/" + theme + ".png").then((asset) => {
+  entry.ready = image(themeFiles[theme]).then((asset) => {
     entry.loaded = asset;
   }).catch((error) => {
     delete sprites[theme];
