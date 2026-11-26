@@ -1,0 +1,96 @@
+:root {
+  color-scheme: dark;
+  background: #131415;
+  color: #f2f3f3;
+  font: 100%/1.4 "Segoe UI", Arial, sans-serif;
+  --accent: #54d2c8;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+[hidden] { display: none !important; }
+button, input { font: inherit; }
+button { color: inherit; cursor: pointer; }
+.demo {
+  width: min(100%, 1440px);
+  margin: 0 auto;
+  padding: clamp(12px, 2vw, 28px);
+}
+.toolbar, .tools { display: flex; align-items: center; }
+.toolbar { justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.toolbar p, .help, .status { margin: 0; color: #c3c8c8; }
+.toolbar p { font-size: .875rem; }
+.tools { gap: 6px; flex-shrink: 0; }
+.tools button {
+  background: #202224;
+  border: 1px solid #414749;
+  border-radius: 6px;
+  min-height: 36px;
+  padding: 5px 10px;
+  font-size: .875rem;
+}
+.tools button:hover, .tools button[aria-pressed="true"] { border-color: var(--accent); }
+.viewport { overflow-x: auto; border-radius: 10px; }
+.viewport.enlarged .instrument { min-width: 800px; }
+@media (min-width: 856px) {
+  #size { display: none; }
+}
+.instrument { width: 100%; position: relative; aspect-ratio: 8 / 3; }
+.instrument img, .instrument canvas, .controls {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.instrument img, .instrument canvas { user-select: none; }
+.hotspot {
+  position: absolute;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  color: transparent;
+  touch-action: manipulation;
+}
+.hotspot[role="slider"] { cursor: ns-resize; touch-action: none; }
+.hotspot[data-cycle] { touch-action: none; }
+.hotspot:disabled { cursor: default; }
+.hotspot:not(:disabled):hover { background: rgb(255 255 255 / .06); }
+.hotspot:active { background: rgb(0 0 0 / .12); }
+.hotspot.round { border-radius: 50%; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.help { font-size: .875rem; margin-top: 9px; }
+.status { font-size: .875rem; margin-top: 6px; }
+.popup {
+  position: fixed;
+  z-index: 2;
+  min-width: 132px;
+  max-width: calc(100% - 16px);
+  max-height: min(360px, calc(100dvh - 16px));
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid #626466;
+  border-radius: 7px;
+  background: #202123;
+  box-shadow: 0 8px 22px #0008;
+}
+.popup button, .popup input {
+  display: block;
+  width: 100%;
+  min-height: 34px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  text-align: left;
+}
+.popup input { background: #151617; border: 1px solid #555; color: inherit; }
+.popup button:hover, .popup button:focus-visible { background: #393c3f; }
+.popup button[aria-pressed="true"] { color: #a7eee8; }
+.popup form { min-width: 148px; padding: 4px; }
+.popup form label { display: block; margin-bottom: 6px; }
+@media (max-width: 520px) {
+  .demo { padding: 8px; }
+  .toolbar { flex-wrap: wrap; gap: 5px; }
+  .toolbar p, .help { font-size: .8125rem; }
+  .tools button { min-height: 38px; }
+}
