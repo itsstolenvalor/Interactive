@@ -21,11 +21,6 @@ const defaults = {
   threshold: -40, width: 100, order: 0, mix: 100, firstEchoFollowsTime: 1,
   single: 0, cycleMutes: 0, alternate: 0, widthSpread: 0, widthMinimum: 0,
 };
-const alias = {
-  startMode: "firstEchoMode", startNote: "firstEchoNote", startMs: "firstEchoMs", cycles: "pairs",
-  sustain: "length", lowCut: "highPass", highCut: "lowPass", ducking: "duck",
-  width: "girth", order: "rightFirst",
-};
 const ranges = {
   sustain: [0, 100, 1], width: [0, 100, 1], lowCut: [20, 2000, .35], highCut: [2000, 20000, .5],
   ducking: [0, 100, 1], mix: [0, 100, 1], threshold: [-80, 0, 1],
@@ -435,70 +430,6 @@ function loadPreset(index) {
   refresh();
 }
 
-function decodePreset(buffer) {
-  const bytes = new Uint8Array(buffer);
-  if (bytes.length < 9) throw new Error("Too short");
-  const header = new DataView(buffer);
-  const binary = header.getUint32(0, true) === 0x21324356;
-  const length = binary ? header.getUint32(4, true) : bytes.length;
-  if (binary && (length === 0 || length > bytes.length - 8)) throw new Error("Invalid length");
-  const text = new TextDecoder().decode(binary ? bytes.subarray(8, 8 + length) : bytes).replace(/\0+$/, "");
-  if (/<!DOCTYPE|<!ENTITY/i.test(text)) throw new Error("Invalid preset XML");
-  const element = new DOMParser().parseFromString(text, "application/xml").documentElement;
-  if (!["StepDelayPreset", "FinestDelay", "StepDelaySession"].includes(element.localName) ||
-      (element.localName === "StepDelayPreset" && element.getAttribute("version") !== "1")) {
-    throw new Error("Invalid preset");
-  }
-  const values = { ...defaults };
-  const seen = new Set();
-  const canonical = new Set();
-  let legacyLowCut = 0;
-  for (const item of element.children) {
-    const stored = item.getAttribute("id");
-    const raw = item.getAttribute("value");
-    if (item.localName !== "PARAM" || raw === null || !raw.trim() ||
-        !Number.isFinite(Number(raw)) || seen.has(stored)) throw new Error("Invalid parameter");
-    seen.add(stored);
-    const id = Object.keys(defaults).find((key) => key === stored || alias[key] === stored);
-    if (!id) {
-      if (stored === "slope") continue;
-      throw new Error("Unknown parameter");
-    }
-    if (canonical.has(id)) throw new Error("Duplicate parameter");
-    canonical.add(id);
-    if (id === "lowCut") legacyLowCut = Number(raw);
-    const range = ranges[id] ?? (id.endsWith("Ms") ? [1, 5000] :
-      id.endsWith("Note") ? [0, 6] : id.endsWith("Mode") ? [0, 3] :
-        ({ cycles: [1, 8], cycleMutes: [0, 255], widthSpread: [0, 2], widthMinimum: [0, 100] }[id] ?? [0, 1]));
-    const value = clamp(Number(raw), range[0], range[1]);
-    values[id] = ranges[id] || id.endsWith("Ms") ? value : Math.round(value);
-  }
-  if (!seen.has("filter")) values.filter = Number(legacyLowCut > 0 || values.highCut < 20000);
-  values.cycleMutes &= mutableCycles(values.cycles);
-  if (!seen.size) throw new Error("Empty preset");
-  return values;
-}
-
-function savePreset() {
-  const params = Object.entries(state).filter(([id]) => id !== "mix" && id !== "threshold");
-  const xml = '<?xml version="1.0" encoding="UTF-8"?>\n<StepDelayPreset version="1">\n' +
-    params.map(([id, val]) => '  <PARAM id="' + (alias[id] ?? id) + '" value="' + val + '"/>').join("\n") +
-    "\n</StepDelayPreset>\n";
-  const encoded = new TextEncoder().encode(xml);
-  const bytes = new Uint8Array(9 + encoded.length);
-  const header = new DataView(bytes.buffer);
-  header.setUint32(0, 0x21324356, true);
-  header.setUint32(4, encoded.length, true);
-  bytes.set(encoded, 8);
-  const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = (presetName.replace(/[^a-z0-9 '()_-]/gi, "_") || "StepDelay") + ".stepdelay";
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  announce("Preset saved.");
-}
-
 function muteCycle(i) {
   const bit = 1 << (i - 1);
   if (mutableCycles(state.cycles) & bit) commit("cycleMutes", state.cycleMutes ^ bit);
@@ -576,27 +507,9 @@ button("presets", "Browse presets", (event) => {
 }, [presetX, presetY, bounds.previous[0] - presetX, presetH]).setAttribute("aria-haspopup", "true");
 button("previous", "Previous preset", () => loadPreset(presetIndex - 1));
 button("next", "Next preset", () => loadPreset(presetIndex + 1));
-button("open", "Load local preset", () => $("preset-file").click());
-button("save", "Save preset", savePreset);
+button("open", "Load local preset (unavailable in demo)", null).disabled = true;
+button("save", "Save preset (unavailable in demo)", null).disabled = true;
 button("website", "Stolen Valor website", () => window.open("https://itsstolenvalor.com", "_blank", "noopener"));
-$("preset-file").addEventListener("change", async (event) => {
-  const file = event.target.files[0];
-  event.target.value = "";
-  if (!file) return;
-  try {
-    if (file.size > 65536) throw new Error("File too large");
-    const loaded = decodePreset(await file.arrayBuffer());
-    state = { ...loaded, mix: state.mix, threshold: state.threshold };
-    presetName = file.name.replace(/\.stepdelay$/i, "");
-    presetIndex = -1;
-    edited = false;
-    announce("Preset loaded.");
-    refresh();
-  } catch {
-    announce("Could not open this StepDelay preset.");
-  }
-});
-
 function image(path) {
   return new Promise((resolve, reject) => {
     const asset = new Image();
@@ -648,21 +561,6 @@ button("theme", "Appearance", (event) => {
   ]);
 }).setAttribute("aria-haspopup", "true");
 
-$("reset").addEventListener("click", () => {
-  closePopup();
-  state = { ...defaults };
-  kill = false;
-  accent = colorDefault;
-  loadPreset(0);
-  changeTheme(false);
-});
-$("size").addEventListener("click", (event) => {
-  const target = event.currentTarget;
-  const enlarged = $("viewport").classList.toggle("enlarged");
-  target.setAttribute("aria-pressed", String(enlarged));
-  target.textContent = enlarged ? "Fit to screen" : "Enlarge controls";
-  if (!enlarged) $("viewport").scrollLeft = 0;
-});
 document.addEventListener("pointerdown", (event) => {
   if (popupAnchor && !popup.contains(event.target) && !popupAnchor.contains(event.target)) closePopup();
 });
